@@ -14,6 +14,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+  activemq:
+    image: apache/activemq-classic:5.18.3
+    ports:
+      - "61616:61616" # OpenWire — OpenMRS and MediAgent connect here
+      - "8161:8161" # Admin console: http://localhost:8161 (admin/admin)
+    volumes:
+      - activemq_data:/var/activemq/data
 
   prometheus:
     image: prom/prometheus:v2.51.0

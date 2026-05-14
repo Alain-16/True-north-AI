@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     meta_whatsapp_token: str
     meta_app_secret:str
     whatsapp_phone_number_id:str
-    whatsapp_verify_token:str
+    whatsapp_verify_token:str | None = None
 
     openmrs_base_url:str
     openmrs_username:str
@@ -25,9 +25,9 @@ class Settings(BaseSettings):
     activemq_username:str
     activemq_password:str
 
-    langchain_api_key:str
-    langchain_tracing_v2:bool=False
-    langchain_project:str="TrueNorth-agent"
+    langchain_api_key: str | None = None
+    langchain_tracing_v2: bool = False
+    langchain_project: str = "TrueNorth-agent"
 
     openai_api_key:str
 
@@ -38,4 +38,4 @@ class Settings(BaseSettings):
 
 @lru_cache()
 def get_settings() -> Settings:
-    return Settings
+    return Settings()
