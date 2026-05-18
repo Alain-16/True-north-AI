@@ -6,7 +6,10 @@ from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from core.config import get_settings
-
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from agent.graph import build_graph
+from psycopg_pool import AsyncConnectionPool
+from features.chat.router import router
 settings = get_settings()
 
 async def _start_consumer():
@@ -18,15 +21,22 @@ async def _start_scheduler():
 
 @asynccontextmanager
 async def lifespan(app:FastAPI):
-    consumer_task = asyncio.create_task(_start_consumer())
-    scheduler_task = asyncio.create_task(_start_scheduler())
+    conninfo = settings.database_url.replace("postgresql+asyncpg://","postgresql://")
 
-    yield
+    async with AsyncConnectionPool(conninfo=conninfo,kwargs={"autocommit":True}) as pool:
+        checkpointer = AsyncPostgresSaver(pool)
+        await checkpointer.setup()
+        app.state.graph = build_graph(checkpointer)
 
-    consumer_task.cancel()
-    scheduler_task.cancel()
+        consumer_task = asyncio.create_task(_start_consumer())
+        scheduler_task = asyncio.create_task(_start_scheduler())
 
-    await asyncio.gather(consumer_task,scheduler_task,return_exceptions=True)
+        yield
+
+        consumer_task.cancel()
+        scheduler_task.cancel()
+
+        await asyncio.gather(consumer_task,scheduler_task,return_exceptions=True)
 
 
 app = FastAPI(
@@ -37,6 +47,8 @@ app = FastAPI(
     redoc_url="/redoc" if settings.debug else None,
 
 )
+
+app.include_router(router)
 
 app.add_middleware(
     CORSMiddleware,
