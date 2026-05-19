@@ -7,7 +7,7 @@ _MARKDOWN_PATTERNS = [
     (r'\*(.*?)\*',     r'\1'),   # *italic*
     (r'_(.*?)_',       r'\1'),   # _italic_
     (r'#{1,6}\s+',     r''),     # ## headers
-    (r'`{1,3}.*?`{1,3}', r'', ), # `code` and ```blocks```
+    (r'`{1,3}(.*?)`{1,3}', r'\1'), # `code` and ```blocks```
 
 ]
 

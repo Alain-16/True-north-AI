@@ -20,9 +20,9 @@ async def _event_stream(graph,initial_state:dict, config:dict):
                 if formatted:
                     yield f"data: {json.dumps({'token':formatted})}\n\n"
     except Exception:
-        yield f"data:{json.dumps({'error':'Something went wrong please try again.'})}\n\n"
+        yield f"data: {json.dumps({'error': 'Something went wrong. Please try again.'})}\n\n"
     finally:
-        yield "data:[DONE]\n\n"
+        yield "data: [DONE]\n\n"
 
 
 @router.post("/stream")
