@@ -26,7 +26,8 @@ class OpenMrsClient:
         self._client = httpx.AsyncClient(
             base_url=f"{base}/ws/rest/v1/",
             auth=httpx.BasicAuth(settings.openmrs_username,settings.openmrs_password),
-            timeout=30.0
+            timeout=30.0,
+            verify=False
         )
 
     async def get(self,path:str,params:dict | None=None) -> dict | list:
@@ -42,7 +43,7 @@ class OpenMrsClient:
               # one exception type tools and LangGraph nodes catch.
               raise OpenmrsError(f"OpenMRS request failed: {exc}") from exc
 
-          if response.is_error:
+          if not response.is_success:
               raise self._parse_error(response)
 
           # Some endpoints return 200 with an empty body (e.g. providerResponse).
@@ -52,7 +53,11 @@ class OpenMrsClient:
 
     @staticmethod
     def _parse_error(response: httpx.Response) -> OpenmrsError:
-          message = f"OpenMRS returned HTTP {response.status_code}"
+          location = response.headers.get("location")
+          if location:
+                message = f"Openmrs returned HTTP {response.status_code}-> redirect to {location}"
+          else:
+            message = f"OpenMRS returned HTTP {response.status_code}"
           code = None
           try:
               error = response.json().get("error", {})
