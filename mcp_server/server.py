@@ -1,6 +1,6 @@
-from mcp.server.fastmcp import FastMCP
-
-mcp = FastMCP("openmrs-mcp-server",host="0.0.0.0",port=8091)
+from mcp_server.app import mcp
+import mcp_server.tools.patient
+import mcp_server.tools.appointment
 
 if __name__ == "__main__":
     mcp.run(transport="sse")
