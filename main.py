@@ -10,6 +10,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from agent.graph import build_graph
 from psycopg_pool import AsyncConnectionPool
 from features.chat.router import router
+from agent.mcp_client import mcp_client
 settings = get_settings()
 
 async def _start_consumer():
@@ -28,6 +29,8 @@ async def lifespan(app:FastAPI):
         await checkpointer.setup()
         app.state.graph = build_graph(checkpointer)
 
+        await mcp_client.connect()
+
         consumer_task = asyncio.create_task(_start_consumer())
         scheduler_task = asyncio.create_task(_start_scheduler())
 
@@ -37,6 +40,8 @@ async def lifespan(app:FastAPI):
         scheduler_task.cancel()
 
         await asyncio.gather(consumer_task,scheduler_task,return_exceptions=True)
+
+        await mcp_client.close()
 
 
 app = FastAPI(
