@@ -30,14 +30,14 @@ class MCPClient:
         if self._session is None:
             raise RuntimeError("MCP client is not connected- call connect() first")
         result = await self._session.call_tool(name,arguments or {})
+        
 
         if result.isError:
             detail = result.content[0].text if result.content else "unknown error"
             raise RuntimeError(f"mcp tool '{name}' failed: {detail}")
         
-        if getattr(result,"structuredContent",None) is not None:
-            return result.structuredContent
-        return json.loads(result.content[0].text)
+        
+        return [json.loads(block.text) for block in result.content]
     
     async def list_tools(self)-> list[str]:
         if self._session is None:
