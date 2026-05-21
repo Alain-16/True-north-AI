@@ -1,54 +1,39 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 
-from mcp_server.tools.patient import get_patient_by_identifier
+from mcp_server.tools.patient import (
+      get_patient_by_identifier,
+      get_patient_lab_results,
+      get_patient_prescriptions,
+  )
 from mcp_server.tools.appointment import (
-      list_specialities,
-      search_services,
-      get_service_load,
-      check_appointment_conflicts,
-      create_appointment,
+      get_upcoming_appointments,
+      get_hospital_busyness_patterns,
   )
 
 
 async def main():
-      # 1. Discovery — no input needed
-      specialities = await list_specialities()
-      print("\n[1] specialities:", specialities)
-      if not specialities:
-          print("No specialities configured in OpenMRS — stopping.")
-          return
-      speciality_uuid = specialities[0]["uuid"]
-
-      # 2. Services under the first speciality
-      services = await search_services(speciality_uuid=speciality_uuid)
-      print("\n[2] services:", services)
-      if not services:
-          print("No services for that speciality — stopping.")
-          return
-      service = services[0]
-      service_uuid = service["uuid"]
-
-      # 3. Capacity for a one-day window
-      day_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-      day_end = day_start + timedelta(days=1)
-      load = await get_service_load(service_uuid, day_start, day_end)
-      print(f"\n[3] load today: {load} / cap {service.get('maxAppointmentsLimit')}")
-
-      # 4. Patient lookup — REPLACE with a real identifier from your instance
+      # Resolve the test patient → UUID (swap in your real identifier)
       patient = await get_patient_by_identifier("ABC200000")
-      print("\n[4] patient:", patient)
       patient_uuid = patient["uuid"]
+      print("\npatient:", patient)
 
-      # 5. Conflict check for a future slot
-      start = day_start + timedelta(days=1, hours=9)
-      end = start + timedelta(minutes=service.get("durationMins") or 30)
-      conflicts = await check_appointment_conflicts(patient_uuid, service_uuid, start, end)
-      print("\n[5] conflicts:", conflicts)
+      # 1. Upcoming appointments
+      appts = await get_upcoming_appointments(patient_uuid)
+      print(f"\n[1] upcoming appointments ({len(appts)}):", appts)
 
-      
-      appt = await create_appointment(patient_uuid, service_uuid, start, end)
-      print("\n[6] created:", appt)
+      # 2. Hospital busyness — a 30-day window
+      now = datetime.now(timezone.utc)
+      summary = await get_hospital_busyness_patterns(now, now + timedelta(days=30))
+      print(f"\n[2] busyness summary ({len(summary)} services):", summary)
+
+      # 3. Lab results (observations)
+      obs = await get_patient_lab_results(patient_uuid)
+      print(f"\n[3] observations ({len(obs)}):", obs)
+
+      # 4. Prescriptions (drug orders)
+      rx = await get_patient_prescriptions(patient_uuid)
+      print(f"\n[4] prescriptions ({len(rx)}):", rx)
 
 
 asyncio.run(main())

@@ -1,6 +1,6 @@
 from mcp_server.app import mcp
 from mcp_server.openmrs_client import client, to_openmrs_datetime
-from datetime import datetime
+from datetime import datetime,timedelta,timezone
 from typing import Literal
 
 @mcp.tool()
@@ -95,3 +95,25 @@ async def create_appointment(
         patient_uuid,service_uuid,start_datetime,end_datetime,appointment_kind,provider_uuids,location_uuid,
     )
     return await client.post("appointment",json=body)
+
+@mcp.tool()
+async def get_upcoming_appointments(patient_uuid: str,days_ahead:int=90)-> list:
+
+    now = datetime.now(timezone.utc)
+    body={
+        "startDate": to_openmrs_datetime(now),
+        "endDate": to_openmrs_datetime(now + timedelta(days=days_ahead)),
+    }
+    return await client.post("appointments/search",json=body)
+
+@mcp.tool()
+async def get_hospital_busyness_patterns(
+    start_datetime: datetime,
+    end_datetime: datetime,
+) -> list:
+    params ={
+        "startDate": to_openmrs_datetime(start_datetime),
+        "endDate": to_openmrs_datetime(end_datetime)
+    }
+    return await client.get("appointment/appointmentSummary", params=params)
+

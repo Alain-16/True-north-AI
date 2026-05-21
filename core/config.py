@@ -8,6 +8,7 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
+    mcp_server_url: str
     database_url: str
 
     anthropic_api_key: str
