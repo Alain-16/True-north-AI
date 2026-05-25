@@ -6,6 +6,7 @@ from agent.nodes.normalize_input import normalize_input
 from agent.nodes.classify_intent import classify_intent
 from agent.nodes.format_channel import format_for_web,format_for_whatsapp
 from agent.nodes.graceful_fallback import graceful_fallback
+from agent.subgraphs.booking import build_booking_subgraph
 
 async def _stub(flow_name: str,state:AgentState)-> dict:
     return{
@@ -30,6 +31,11 @@ async def reminders_stub(state: AgentState) -> dict:
     return await _stub("reminders", state)
 
 _MAIN_FLOWS = {"booking","triage","reports","queue","reminders"}
+
+def route_after_normalization(state:AgentState)-> str:
+    if state.current_flow in _MAIN_FLOWS and state.flow_state.get("step"):
+        return state.current_flow
+    return "classify_intent"
 
 def route_intent(state: AgentState)-> str:
     flow = state.current_flow
@@ -56,9 +62,11 @@ _RESPONSE_NODES = [*_MAIN_FLOWS,"graceful_fallback"]
 def build_graph(checkpointer:AsyncPostgresSaver | None = None)-> CompiledStateGraph:
     graph = StateGraph(AgentState)
 
+    booking_subgraph = build_booking_subgraph()
+
     graph.add_node("normalize_input", normalize_input)
     graph.add_node("classify_intent",     classify_intent)
-    graph.add_node("booking",             booking_stub)
+    graph.add_node("booking",             booking_subgraph)
     graph.add_node("triage",              triage_stub)
     graph.add_node("reports",             reports_stub)
     graph.add_node("queue",               queue_stub)
@@ -68,7 +76,11 @@ def build_graph(checkpointer:AsyncPostgresSaver | None = None)-> CompiledStateGr
     graph.add_node("format_for_web",      format_for_web)
 
     graph.add_edge(START,"normalize_input")
-    graph.add_edge("normalize_input","classify_intent")
+    graph.add_conditional_edges(
+        "normalize_input",
+        route_after_normalization,
+        {"classify_intent":"classify_intent"} | {flow: flow for flow in _MAIN_FLOWS},
+    )
 
     graph.add_conditional_edges(
         "classify_intent",

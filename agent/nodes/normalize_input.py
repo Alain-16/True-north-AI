@@ -5,7 +5,7 @@ async def normalize_input(state:AgentState) -> dict:
 
     last = state.messages[-1] if state.messages else None
 
-    updates : dict = {"retry_count":0}
+    updates : dict = {"retry_count":0,"response":None,"error":None}
 
     if last and not isinstance(last,HumanMessage):
         content = last.get("content","") if isinstance(last,dict) else str(last)
