@@ -10,9 +10,23 @@ import logging
 from sqlalchemy import select
 from core.database import AsyncSessionLocal
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from models.db import Patient,AppointmentRecord
+from models.db import Patient,AppointmentRecord,ReminderSchedule
 
 logger = logging.getLogger(__name__)
+
+REMINDER_OFFSETS =[
+     ("appointment_reminder_7d", timedelta(days=7)),
+     ("appointment_reminder_1d", timedelta(days=1)),
+     ("appointment_reminder_2h", timedelta(hours=2)),
+
+]
+
+TIME_OF_DAY_WINDOWS = {
+      "morning":   (6, 12),
+      "afternoon": (12, 17),
+      "evening":   (17, 21),
+  }
+
 
 MATCH_SPECIALITY_PROMPT = """
   You match a patient's requested specialty to one of a hospital's available specialities.
@@ -29,16 +43,22 @@ EXTRACT_SYSTEM_PROMPT="""
 
   You extract appointment-booking details from a patient's message.
 
+  Today is {today}. Resolve any date hints the patient mentions to a concrete
+  ISO date (YYYY-MM-DD).
+  - "wednesday" or "this wednesday" → the next Wednesday on or after today
+  - "next monday" → the Monday of the following week (skip the current week)
+  - "tomorrow" → today + 1 day
+  - "today" → today
+  - "as soon as possible" or no date mentioned → null
+
+  For time-of-day, bucket into one of: morning | afternoon | evening.
+  - "morning" / "9 am" / "before lunch" → morning
+  - "afternoon" / "after lunch" / "2 pm" → afternoon
+  - "evening" / "after 5" → evening
+  - no time mentioned → null
+
   Return valid JSON only — no explanation, no markdown, no code fences:
-  {"specialty": <string or null>, "date_preference": <string or null>, "time_preference": <string or null>}
-
-  specialty       — the type of doctor or department the patient wants
-                    (e.g. "dermatology", "ENT", "general medicine"). null if not stated.
-  date_preference — any date hint in the patient's own words
-                    (e.g. "this week", "next Monday", "tomorrow", "as soon as possible"). null if not stated.
-  time_preference — any time-of-day hint (e.g. "morning", "afternoon", "9 AM"). null if not stated.
-
-
+  {{"specialty": <string or null>, "date": <YYYY-MM-DD or null>, "time_of_day": <"morning"|"afternoon"|"evening" or null>}}
 """
 
 SELECTION_PROMPT = """
@@ -53,28 +73,30 @@ SELECTION_PROMPT = """
   """
 
 async def extract_params(state: AgentState) -> dict:
-      user_message = [m for m in state.messages if isinstance(m,HumanMessage)]
+      user_message = [m for m in state.messages if isinstance(m, HumanMessage)]
       latest = user_message[-1].content if user_message else ""
-      
-      raw = await llm.simple(
-            prompt=f"Patient message:{latest}",
-            system=EXTRACT_SYSTEM_PROMPT
-      ) 
-      print("debug latest:",repr(latest))
-      print("debug:",repr(raw))
-      try:
-            parsed= json.loads(raw)
-      except (json.JSONDecodeError,ValueError):
-            parsed={}
-            
-      return {
-            "flow_state":{
-                  **state.flow_state,
-                  "specialty":parsed.get("specialty"),
-                  "date_preference":parsed.get("date_preference"),
-                  "time_preference":parsed.get("time_preference"),
 
-            }
+     
+      today_iso = datetime.now(timezone.utc).date().isoformat()
+
+      raw = await llm.simple(
+          prompt=f"Patient message:{latest}",
+          system=EXTRACT_SYSTEM_PROMPT.format(today=today_iso),
+      )
+      print("debug latest:", repr(latest))
+      print("debug:", repr(raw))
+      try:
+          parsed = json.loads(raw)
+      except (json.JSONDecodeError, ValueError):
+          parsed = {}
+
+      return {
+          "flow_state": {
+              **state.flow_state,
+              "specialty":   parsed.get("specialty"),
+              "date":        parsed.get("date"),         
+              "time_of_day": parsed.get("time_of_day"),  
+          }
       }
 
 
@@ -88,7 +110,9 @@ async def resolve_service(state: AgentState) -> dict:
                   }
             }
       specialties = await mcp_client.call_tool("list_specialities",{})
+      print("DEBUG specialties:", [(s["uuid"], s["name"]) for s in specialties])
       matched = await _match_speciality(specialty,specialties)
+      print("DEBUG matched:", matched)
       if matched is None:
             names = ", ".join(s["name"] for s in specialties)
             return {
@@ -100,6 +124,7 @@ async def resolve_service(state: AgentState) -> dict:
       services = await mcp_client.call_tool(
             "search_services",{"speciality_uuid":matched["uuid"]}
       )
+      print("DEBUG services:", services) 
       if not services:
             return {
                   "response":{
@@ -118,65 +143,115 @@ async def resolve_service(state: AgentState) -> dict:
 
 
 async def generate_slots(state: AgentState) -> dict:
-      service = state.flow_state["service"]
-      service_uuid = state.flow_state["service_uuid"]
-      duration = timedelta(minutes=service.get("durationMins") or 30)
+      service        = state.flow_state["service"]
+      service_uuid   = state.flow_state["service_uuid"]
+      requested_date = state.flow_state.get("date")
+      time_of_day    = state.flow_state.get("time_of_day")
+      duration       = timedelta(minutes=service.get("durationMins") or 30)
 
       today = datetime.now(timezone.utc).date()
-      candidates: list[dict] = []
 
-      for offset in range(1, 15):
-          day = today + timedelta(days=offset)
+      # Build the days to try. Requested day goes FIRST so we honor it when possible;
+      # then we tack on the next 14 days as fallback so we always have something to
+      # offer, even if the requested day is closed or full.
+      days_to_try: list = []
+      if requested_date:
+          try:
+              target = datetime.strptime(requested_date, "%Y-%m-%d").date()
+              if target >= today:
+                  days_to_try.append(target)
+          except ValueError:
+              # Malformed date from the LLM — ignore preference, fall through to default scan.
+              pass
+      days_to_try += [
+          today + timedelta(days=i)
+          for i in range(1, 15)
+          if (today + timedelta(days=i)) not in days_to_try
+      ]
+
+      candidates: list[dict] = []
+      fallback_used = False
+
+      for idx, day in enumerate(days_to_try):
           window = _day_window(service, day)
           if window is None:
               continue
           start_dt, end_dt, cap = window
 
+
+          if time_of_day and time_of_day in TIME_OF_DAY_WINDOWS:
+              tod_start_h, tod_end_h = TIME_OF_DAY_WINDOWS[time_of_day]
+              tod_start = start_dt.replace(hour=tod_start_h, minute=0, second=0, microsecond=0)
+              tod_end   = start_dt.replace(hour=tod_end_h,   minute=0, second=0, microsecond=0)
+              start_dt  = max(start_dt, tod_start)
+              end_dt    = min(end_dt,   tod_end)
+              if start_dt >= end_dt:
+                  continue
+
           load = (await mcp_client.call_tool("get_service_load", {
-              "service_uuid": service_uuid,
+              "service_uuid":   service_uuid,
               "start_datetime": start_dt.isoformat(),
-              "end_datetime": end_dt.isoformat(),
+              "end_datetime":   end_dt.isoformat(),
           }))[0]
           if cap is not None and load >= cap:
-              continue  # day is at capacity
+              continue
 
           slot_start = start_dt
           while slot_start + duration <= end_dt:
               candidates.append({
                   "start": slot_start.isoformat(),
-                  "end": (slot_start + duration).isoformat(),
+                  "end":   (slot_start + duration).isoformat(),
                   "label": slot_start.strftime("%a %d %b, %H:%M"),
               })
               slot_start += duration
 
           if candidates:
               candidates = candidates[:5]
+
+              if requested_date and idx > 0:
+                  fallback_used = True
               break
 
       if not candidates:
-            
-            return {"response": {
+          if requested_date or time_of_day:
+              msg = (f"I couldn't find any {time_of_day or 'available'} openings "
+                     f"on {requested_date or 'the days you asked about'} "
+                     "or in the next two weeks. ")
+          else:
+              msg = "I couldn't find any openings in the next two weeks. "
+          return {"response": {
               "type": "text",
-              "content": "I couldn't find any openings in the next two weeks. "
-                         "Please try a different service or contact the hospital.",
+              "content": msg + "Please try a different service or contact the hospital.",
           }}
 
-      return {"flow_state": {**state.flow_state, "candidates": candidates}}
+      return {
+          "flow_state": {
+              **state.flow_state,
+              "candidates":    candidates,
+              "fallback_used": fallback_used,
+          },
+      }
+
 
 
 async def present_slots(state: AgentState) -> dict:
-    candidates = state.flow_state["candidates"]
-    options = "\n".join(
-          f"{i}. {c['label']}" for i, c in enumerate(candidates, 1)
-      )
-    content = (
-          f"Here are the next available appointment times:\n\n{options}\n\n"
-          "Reply with a number to book."
-      )
-    return {
+      candidates    = state.flow_state["candidates"]
+      fallback_used = state.flow_state.get("fallback_used")
+      requested_date = state.flow_state.get("date")
+
+      options = "\n".join(f"{i}. {c['label']}" for i, c in enumerate(candidates, 1))
+
+      if fallback_used and requested_date:
+          preamble = f"{requested_date} isn't available — here are the next openings instead:"
+      else:
+          preamble = "Here are the next available appointment times:"
+
+      content = f"{preamble}\n\n{options}\n\nReply with a number to book."
+      return {
           "flow_state": {**state.flow_state, "step": "awaiting_selection"},
-          "response": {"type": "text", "content": content},
+          "response":   {"type": "text", "content": content},
       }
+
 
 
 
@@ -233,7 +308,7 @@ async def confirm_create(state: AgentState) -> dict:
       appt = (await mcp_client.call_tool("create_appointment", appt_args))[0]
       number = appt.get("appointmentNumber", "—")
 
-      await _mirror_appointment(state,appt,chosen,service)
+      await _persist_appointment(state,appt,chosen,service)
 
       return {
           "flow_state": {},
@@ -244,7 +319,7 @@ async def confirm_create(state: AgentState) -> dict:
           },
       }
 
-async def _mirror_appointment(state:AgentState,appt:dict, chosen:dict, service:dict)-> None:
+async def _persist_appointment(state:AgentState,appt:dict, chosen:dict, service:dict)-> None:
      
      try:
           async with AsyncSessionLocal() as session:
@@ -260,15 +335,39 @@ async def _mirror_appointment(state:AgentState,appt:dict, chosen:dict, service:d
                            state.openmrs_patient_id
                       )
                       return
+               scheduled_at = datetime.fromisoformat(chosen["start"])
                stmt = pg_insert(AppointmentRecord).values(
                     patient_id = local_patient_id,
                     openmrs_appt_id = appt["uuid"],
                     specialty = service.get("name"),
-                    scheduled_at = datetime.fromisoformat(chosen["start"]),
-               ).on_conflict_do_nothing(index_elements=["openmrs_appt_id"])
+                    scheduled_at = scheduled_at,
+               ).on_conflict_do_nothing(index_elements=["openmrs_appt_id"]).returning(AppointmentRecord.id)
+               new_appt_id = (await session.execute(stmt)).scalar_one_or_none()
+               if new_appt_id is None:
+                      await session.commit()
+                      return
+               
+               now = datetime.now(timezone.utc)
+               template = "appointment_reminder" if state.channel == "whatsapp" else None
+               reminder_rows =[
+                    {
+                         "patient_id":local_patient_id,
+                         "appointment_id":new_appt_id,
+                         "event_type":"appointment_reminder",
+                         "trigger_at":scheduled_at - delta,
+                         "channel":state.channel,
+                         "template_name":template,
 
-               await session.execute(stmt)
+                    }
+                    for _label, delta in REMINDER_OFFSETS
+                    if scheduled_at - delta > now
+               ]
+               if reminder_rows:
+                      await session.execute(pg_insert(ReminderSchedule),reminder_rows)
+                  
                await session.commit()
+
+               
      except Exception:
           logger.exception(
                "Failed to mirror appointment to local DB;"

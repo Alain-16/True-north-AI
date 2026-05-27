@@ -13,25 +13,28 @@ class LLMClient:
             self,
             prompt: str,
             system: str | None = None,
+            messages: list[dict] | None= None,
             max_tokens: int = 1024,
             **kwargs,
     ) -> str:
-        return await self._call(self.SONNET,prompt,system,max_tokens,**kwargs)
+        return await self._call(self.SONNET,prompt,system,messages,max_tokens,**kwargs)
     
     async def complex(
             self,
             prompt:str,
             system:str | None = None,
-            max_tokens: int = 1024,
+            messages: list[dict] | None= None,
+            max_tokens: int = 2048,
             **kwargs,
     ) -> str:
-        return await self._call(self.OPUS,prompt,system,max_tokens,**kwargs)
+        return await self._call(self.OPUS,prompt,system,messages,max_tokens,**kwargs)
     
     async def _call(
             self,
             model:str,
             prompt:str,
             system:str,
+            messages: list[dict] | None,
             max_tokens: int,
             **kwargs,
     ) -> str:
@@ -41,6 +44,13 @@ class LLMClient:
             "messages":[{"role":"user","content":prompt}],
             **kwargs,
         }
+        if messages is None:
+            if prompt is None:
+                  raise ValueError("Must provide either `prompt` or `messages`")
+            messages = [{"role": "user", "content": prompt}]
+
+        params: dict = {"model": model, "max_tokens": max_tokens, "messages": messages, **kwargs}
+
 
 
         if system:

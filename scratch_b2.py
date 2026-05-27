@@ -19,9 +19,9 @@ async def main():
         # Note: no manual `response: None` — normalize_input now handles that.
         state = await graph.ainvoke({
             "patient_id": "test",
-            "openmrs_patient_id": "ABC200002",
+            "openmrs_patient_id": "ABC200000",
             "channel": "web",
-            "messages": [HumanMessage(content="I need a ent doctor")],
+            "messages": [HumanMessage(content="I need a general medicine doctor wednesday morning")],
         })
         print("\n--- TURN 1 ---")
         print("current_flow:     ", state.get("current_flow"))
