@@ -7,7 +7,7 @@ from agent.llm_client import llm
 from agent.mcp_client import mcp_client
 
 DISCLAIMER = (
-    "This is guidance to help you reach the right care, not a diagnosis."
+    "This is guidance to help you reach the right care, not a diagnosis. "
     "Always consult a doctor for medical advice and diagnosis."
     )
 
@@ -27,15 +27,40 @@ GATHER_PROMPT = """
   ═══════════════════════════════════════════
   WHAT TO GATHER
   ═══════════════════════════════════════════
-  Before recommending, you need:
-  - Onset: "When did this start?"
-  - Trajectory: "Is it getting worse, staying the same, or getting better?"
-  - Severity (1–10): "How would you rate the [pain/discomfort/difficulty] from 1 to 10?"
-  - Associated symptoms: ask about the specific red flags for the complaint area below.
-  - Functional impact: "Is this preventing you from doing your normal activities?"
+  Your goal is to gather just enough information to confidently classify ESI level —
+  NOT to fill every possible field. For low-concern presentations (mild sore throat,
+  simple rash, stable back pain without red flags), 2–3 dimensions is usually enough.
+  For higher-concern presentations, gather more thoroughly.
 
-  Skip dimensions the patient has already volunteered. Ask ONE question at a time —
-  never multiple in a single message. Never ask open-ended fillers like "tell me more."
+  Useful dimensions, in priority order:
+  - Onset: when did this start?
+  - Severity: numeric (1–10) OR descriptor (mild / moderate / severe). EITHER is
+    sufficient — do NOT push for a number if the patient gave a clear descriptor.
+  - Associated symptoms / red flags: the most clinically important questions —
+    they're what distinguishes ESI levels. Ask the SPECIFIC ones for the complaint
+    area listed below.
+  - Trajectory: getting worse / same / improving. Useful but optional for clearly
+    stable mild complaints.
+  - Functional impact: preventing normal activities? Useful but optional for mild
+    complaints; important for moderate/severe ones.
+
+  Skip dimensions the patient has already volunteered (even partially — "slight fever"
+  is a valid severity descriptor; don't demand an exact temperature unless the case
+  is escalating). Ask ONE question at a time, never multiple in a single message.
+  Never ask open-ended fillers like "tell me more."
+
+  ═══════════════════════════════════════════
+  READY THRESHOLD
+  ═══════════════════════════════════════════
+  Set ready=true as soon as you can classify confidently:
+  - For mild, low-concern, no-red-flag complaints: 2–3 dimensions is typically enough.
+  - For moderate complaints: cover onset, severity, and the key red flags for the area.
+  - For severe or red-flag complaints: ready=true with emergency_override=true as soon
+    as the red flag is identified — do NOT continue gathering.
+
+  Endless gathering frustrates patients and adds no clinical value beyond a certain
+  point. When in doubt between "ask one more" and "classify now," lean toward
+  classify if no red flags have surfaced.
 
   RED FLAG PATTERNS to actively probe based on the chief complaint:
   - HEADACHE → worst headache ever, sudden onset, neck stiffness, fever, vision changes,
@@ -258,6 +283,7 @@ async def gather_info(state:AgentState)-> dict:
     
     return{
         "flow_state":new_flow,
+        "messages":[AIMessage(content=patient_msg)],
         "response":{
             "type":"text",
             "content":f"{patient_msg}\n\n{DISCLAIMER}",
@@ -266,7 +292,7 @@ async def gather_info(state:AgentState)-> dict:
 
 
 async def recommend(state:AgentState)-> dict:
-    specialties = await mcp_client.call_tool("list_specialties",{})
+    specialties = await mcp_client.call_tool("list_specialities",{})
     spec_lines = "\n".join(f"- {s['name']}" for s in specialties)
     valid_specs = {s["name"] for s in specialties}
 
@@ -289,6 +315,7 @@ async def recommend(state:AgentState)-> dict:
     if routing not in valid_routings or esi_level not in {1,2,3,4,5}:
         return{
             "flow_state":{},
+            "messages":[AIMessage(content=patient_msg)],
             "response":{
                 "type":"text",
                 "content":(
@@ -308,6 +335,7 @@ async def recommend(state:AgentState)-> dict:
     if routing in non_bookable:
         return{
               "flow_state": {},
+              "messages":[AIMessage(content=patient_msg)],
               "response": {"type": "text", "content": f"{patient_msg}\n\n{DISCLAIMER}"},
           }
        
@@ -315,6 +343,7 @@ async def recommend(state:AgentState)-> dict:
     if specialty not in valid_specs:
           return {
               "flow_state": {},
+              "messages":[AIMessage(content=patient_msg)],
               "response": {
                   "type": "text",
                   "content": (
@@ -332,6 +361,7 @@ async def recommend(state:AgentState)-> dict:
             "recommendation":data,
             "recommended_specialty":specialty,
         },
+        "messages":[AIMessage(content=patient_msg)],
         "response":{
             "type":"text",
             "content":f"{patient_msg}\n\n{DISCLAIMER}"
@@ -364,6 +394,7 @@ async def handle_acceptance(state:AgentState)-> dict:
     if action in ("decline","cancel"):
         return{
               "flow_state": {},
+              "messages":[AIMessage(content=latest)],
               "response": {
                   "type": "text",
                   "content": f"Okay, no booking for now. Let me know if you need anything else.\n\n{DISCLAIMER}",
@@ -371,6 +402,7 @@ async def handle_acceptance(state:AgentState)-> dict:
 
         }
     return {
+        "messages":[AIMessage(content=latest)],
         "response":{
             "type":"text",
             "content":(
