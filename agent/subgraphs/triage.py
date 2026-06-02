@@ -385,6 +385,7 @@ async def handle_acceptance(state:AgentState)-> dict:
 
     if action == "accept":
         return{
+            "current_flow":"booking",
             "flow_state": {
             "accepted":  True,
             "specialty": state.flow_state.get("recommended_specialty"),

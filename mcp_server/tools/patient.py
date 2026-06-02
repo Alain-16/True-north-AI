@@ -26,4 +26,16 @@ async def get_patient_prescriptions(patient_uuid:str)-> list:
         params={"patient":patient_uuid,"type":"drugorder","v":"full"}
 
     )
-    return data.get("result",[])
+    return data.get("results",[])
+
+@mcp.tool()
+async def get_obs_by_uuid(obs_uuid:str)-> dict:
+    return await client.get(f"obs/{obs_uuid}",params={"v":"full"})
+
+@mcp.tool()
+async def get_order_by_uuid(order_uuid:str)-> dict:
+    return await client.get(f"order/{order_uuid}", params={"v":"full"})
+
+@mcp.tool()
+async def get_concept_by_uuid(concept_uuid:str)->dict:
+    return await client.get(f"concept/{concept_uuid}",params={"v":"full"})

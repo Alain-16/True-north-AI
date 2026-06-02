@@ -380,6 +380,8 @@ def route_entry(state:AgentState)-> str:
       step = state.flow_state.get("step")
       if step == "awaiting_selection":
             return "handle_selection"
+      if state.flow_state.get("specialty"):
+            return "resolve_service"
       return "extract_params"
 
 def route_after_resolve(state:AgentState)-> str:
@@ -467,7 +469,10 @@ def build_booking_subgraph() -> CompiledStateGraph:
       graph.add_conditional_edges(
           START,
           route_entry,
-          {"extract_params": "extract_params", "handle_selection": "handle_selection"},
+          {"extract_params": "extract_params",
+           "handle_selection": "handle_selection",
+           "resolve_service":"resolve_service",
+           },
       )
 
       
