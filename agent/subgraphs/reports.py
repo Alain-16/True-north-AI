@@ -1,4 +1,4 @@
-
+import json
 
 def _display(obj:dict | None)->str | None:
     if not obj:
@@ -23,6 +23,16 @@ def _read_obs_value(obs:dict)-> tuple[object,str | None]:
         return obs["valueText"], "text"
     return None, None
 
+def _parse_dosing(raw:str | None)-> tuple[str | None, str | None]:
+    if not raw:
+        return None, None
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError,ValueError):
+        return raw, None
+    if isinstance(parsed,dict):
+        return parsed.get("instructions"),parsed.get("additionalInstructions")
+    return raw,None
 
 def shape_lab_result(obs:dict,concept:dict | None = None)-> dict:
 
@@ -56,6 +66,7 @@ def shape_lab_result(obs:dict,concept:dict | None = None)-> dict:
     }
 
 def shape_prescription(order: dict)-> dict:
+    instructions, additional_instructions = _parse_dosing(order.get("instructions"))
     return {
           "order_uuid":          order.get("uuid"),
           "order_number":        order.get("orderNumber"),
@@ -71,7 +82,8 @@ def shape_prescription(order: dict)-> dict:
           "date_stopped":        order.get("dateStopped"),
           "auto_expire_date":    order.get("autoExpireDate"),
           "as_needed":           order.get("asNeeded"),
-          "dosing_instructions": order.get("dosingInstructions"),
+          "dosing_instructions": instructions,
+          "additional_instructions": additional_instructions,
           "num_refills":         order.get("numRefills"),
           "orderer":             _display(order.get("orderer")),
 
