@@ -2,6 +2,9 @@ import json
 from typing import Literal,Optional
 from pydantic import BaseModel
 from agent.mcp_client import mcp_client
+from agent.llm_client import llm
+from langgraph.graph import StateGraph, START,END
+from langgraph.graph.state import CompiledStateGraph
 
 
 DISCLAIMER = (
@@ -349,3 +352,111 @@ def route_after_fetch(state:ReportState)-> dict:
         return "classify_lab"
     return "explain"
     
+
+def _build_user_message(state: ReportState) -> str:
+
+      if state.resource_type == "lab":
+          header = "Explain this LAB RESULT to the patient."
+          status_line = f"Computed status: {state.classification}\n"
+      else:
+          header = "Explain this PRESCRIPTION to the patient."
+          status_line = ""
+      return (
+          f"{header}\n{status_line}"
+          f"Record data (JSON):\n{json.dumps(state.shaped, indent=2, default=str)}"
+      )
+
+
+async def explain(state: ReportState) -> dict:
+
+      raw = await llm.complex(
+          messages=[{"role": "user", "content": _build_user_message(state)}],
+          system=EXPLAIN_SYSTEM_PROMPT,
+      )
+      message, meta = _split_response(raw)
+
+
+      is_critical = state.is_critical or meta.get("status") == "critical"
+
+      return {
+          "explanation":        message,
+          "profile_extraction": meta.get("profile_extraction", {}),
+          "confidence":         meta.get("explanation_confidence"),
+          "is_critical":        is_critical,
+      }
+
+
+def _response_type(state: ReportState) -> str:
+      return "lab_result" if state.resource_type == "lab" else "prescription"
+
+
+def _metadata(state: ReportState) -> dict:
+
+      return {
+          "resource_type": state.resource_type,
+          "resource_uuid": state.resource_uuid,
+          "status":        state.classification,
+          "is_critical":   state.is_critical,
+          "confidence":    state.confidence,
+          "test":          state.shaped.get("test"),
+          "drug":          state.shaped.get("drug"),
+      }
+
+
+def finalize(state: ReportState) -> dict:
+
+      CRITICAL_BANNER = (
+          "⚠ This value is critically outside the normal range. Contact your "
+          "healthcare provider or seek emergency care immediately."
+      )
+
+
+      if state.confidence == "low" or not state.explanation:
+          kind = "lab result" if state.resource_type == "lab" else "prescription"
+          content = (
+              f"I've received a new {kind} on your record, but I'm not able to "
+              "explain it reliably. Please discuss it with your doctor.\n\n"
+              f"{DISCLAIMER}"
+          )
+          return {"response": {
+              "type":     _response_type(state),
+              "content":  content,
+              "metadata": _metadata(state),
+          }}
+
+      content = state.explanation
+
+
+      if state.is_critical and "⚠" not in content:
+          content = f"{CRITICAL_BANNER}\n\n{content}"
+
+
+      if "informational purposes only" not in content.lower():
+          content = f"{content}\n\n{DISCLAIMER}"
+
+      return {"response": {
+          "type":     _response_type(state),
+          "content":  content,
+          "metadata": _metadata(state),
+      }}
+
+def build_report_subgraph()-> CompiledStateGraph:
+    graph = StateGraph(ReportState)
+
+    graph.add_node("fetch_resource", fetch_resource)
+    graph.add_node("classify_lab",classify_lab)
+    graph.add_node("explain",explain)
+    graph.add_node("finalize",finalize)
+
+    graph.add_edge(START, "fetch_resource")
+    graph.add_conditional_edges(
+        "fetch_resource",
+        route_after_fetch,
+        {"classify_lab":"classify_lab","explain":"explain","end":END},
+
+    )
+    graph.add_edge("classify_lab","explain")
+    graph.add_edge("explain","finalize")
+    graph.add_edge("finalize",END)
+
+    return graph.compile()

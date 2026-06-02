@@ -1,5 +1,5 @@
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from pgvector.sqlalchemy import Vector
 from core.database import Base
 
@@ -137,3 +137,14 @@ class MedicalKnowledge(Base):
           sa.Index("idx_knowledge_category", "category"),
       )
 
+
+class MedicalProfile(Base):
+    __tablename__ = "medical_profiles"
+
+    id = sa.Column(sa.Uuid, primary_key=True,server_default=sa.text("gen_random_uuid()"))
+    patient_id = sa.Column(sa.Uuid, sa.ForeignKey("patients.id"),unique=True,nullable=False)
+    profile = sa.Column(JSONB,nullable=False,server_default=sa.text("'{}'::jsonb"))
+    last_source = sa.Column(sa.String(100))
+    version = sa.Column(sa.Integer, nullable=False, server_default=sa.text("1"))
+    created_at = sa.Column(sa.DateTime(timezone=True),nullable=False,server_default=sa.text("NOW()"))
+    updated_at = sa.Column(sa.DateTime(timezone=True),nullable=False,server_default=sa.text("NOW()"))
