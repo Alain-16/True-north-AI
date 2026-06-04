@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     otp_expiry_minutes:int=10
     reminder_scan_interval_seconds:int=60
     rag_confidence_threshold:float=0.75
+    default_country_code: str = "250"
     debug:bool=False
 
 @lru_cache()

@@ -1,6 +1,17 @@
 from mcp_server.app import mcp
 from mcp_server.openmrs_client import client
 
+
+_PHONE_ATTR_NAMES = {"Telephone Number","Phone number","Mobile","Contact Number"}
+_EMAIL_ATTR_NAMES = {"Email","Email Address","Email address"}
+
+def _person_attr(person: dict, names: set[str]) -> str | None:
+    for attr in person.get("attributes") or []:
+        display = (attr.get("attributeType") or {}).get("display")
+        if display in names:
+            return attr.get("value") or None
+        return None
+
 @mcp.tool()
 async def get_patient_by_identifier(identifier:str)-> dict:
     data = await client.get("patient",params={"identifier":identifier})
@@ -50,4 +61,6 @@ async def get_patient_by_uuid(patient_uuid: str) -> dict:
           "identifier": identifiers[0].get("identifier") if identifiers else None,
           "age": person.get("age"),
           "gender": person.get("gender"),
+          "email":_person_attr(person,_EMAIL_ATTR_NAMES),
+          "phone":_person_attr(person,_PHONE_ATTR_NAMES),
       }
