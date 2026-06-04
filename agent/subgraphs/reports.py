@@ -303,36 +303,34 @@ def shape_prescription(order: dict)-> dict:
     }
 
 
-async def fetch_resource(state:ReportState) -> dict:
-    if state.resource_type == "lab":
-        obs =(await mcp_client.call_tool(
-            "get_obs_by_uuid",
-            {"obs_uuid": state.resource_uuid}
-        ))
+async def fetch_resource(state: ReportState) -> dict:
+      if state.resource_type == "lab":
+          obs = (await mcp_client.call_tool(
+              "get_obs_by_uuid", {"obs_uuid": state.resource_uuid}
+          ))[0]                                          # ← [0]: unwrap the content block
 
-        concept = None
-        concept_uuid = (obs.get("concept") or {}).get("uuid")
-        if concept_uuid:
-            concept =(await mcp_client.call_tool(
-                "get_concept_by_uuid",{"concept_uuid": concept_uuid}
-            ))[0]
-            shaped = shape_lab_result(obs,concept)
+          concept = None
+          concept_uuid = (obs.get("concept") or {}).get("uuid")
+          if concept_uuid:                               # ← this if ONLY fetches the concept
+              concept = (await mcp_client.call_tool(
+                  "get_concept_by_uuid", {"concept_uuid": concept_uuid}
+              ))[0]
 
-            if shaped["value"] is None:
-                return {"skip_reason":"observation has no value"
-                                       "(diagnosis or grouped obs); nothing to explain" }
-            return {"shaped":shaped}
-        
-        order = (await mcp_client.call_tool(
-            "get_order_buy_uuid",
-            {"order_uuid": state.resource_uuid}
-        ))[0]
+          shaped = shape_lab_result(obs, concept)        # ← OUT of the concept if
 
-        shaped = shape_prescription(order)
-        if shaped["drug"] is None:
-            return {"skip_reason":"drug order has no drug or concept; nothing to explain"}
-        
-        return {"shaped":shaped}
+          if shaped["value"] is None:
+              return {"skip_reason": "observation has no value "
+                                     "(diagnosis or grouped obs); nothing to explain"}
+          return {"shaped": shaped}                       # ← lab branch always returns here
+
+      # Prescription — un-indented, runs only when type != "lab"
+      order = (await mcp_client.call_tool(
+          "get_order_by_uuid", {"order_uuid": state.resource_uuid}   # ← "by", not "buy"
+      ))[0]
+      shaped = shape_prescription(order)
+      if shaped["drug"] is None:
+          return {"skip_reason": "drug order has no drug or concept; nothing to explain"}
+      return {"shaped": shaped}
     
 
 def classify_lab(state:ReportState)-> dict:

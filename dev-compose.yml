@@ -17,8 +17,9 @@ services:
   activemq:
     image: apache/activemq-classic:5.18.3
     ports:
-      - "61616:61616" # OpenWire — OpenMRS and MediAgent connect here
-      - "8161:8161" # Admin console: http://localhost:8161 (admin/admin)
+      - "61616:61616"
+      - "61613:61613"
+      - "8161:8161"
     volumes:
       - activemq_data:/var/activemq/data
 
@@ -44,3 +45,8 @@ volumes:
   prometheus_data:
   grafana_data:
   activemq_data:
+
+networks:
+  bahmni:
+    external: true
+    name: bahmni-standard_default

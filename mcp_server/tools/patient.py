@@ -39,3 +39,15 @@ async def get_order_by_uuid(order_uuid:str)-> dict:
 @mcp.tool()
 async def get_concept_by_uuid(concept_uuid:str)->dict:
     return await client.get(f"concept/{concept_uuid}",params={"v":"full"})
+
+@mcp.tool()
+async def get_patient_by_uuid(patient_uuid: str) -> dict:
+      data = await client.get(f"patient/{patient_uuid}", params={"v": "full"})
+      identifiers = data.get("identifiers") or []
+      person = data.get("person") or {}
+      return {
+          "uuid": data.get("uuid"),
+          "identifier": identifiers[0].get("identifier") if identifiers else None,
+          "age": person.get("age"),
+          "gender": person.get("gender"),
+      }

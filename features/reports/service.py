@@ -3,6 +3,11 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from core.database import AsyncSessionLocal
 from models.db import MedicalProfile
+from sqlalchemy import update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from models.db import ReportDeliveryLog
+from datetime import datetime,timedelta, timezone
+
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +17,8 @@ RISK_KEYS = [
       "recent_surgery",
       "pregnancy_indicators",
   ]
+
+REFILL_LEAD_DAYS = 3
 
 
 def _merge_by_key(existing: list, new: list, key: str) -> list:
@@ -179,3 +186,112 @@ def to_history_context(
               "age_risk":           _age_risk(demo.get("age")),
           },
       }
+
+
+async def claim_delivery(patient_id,resource_id: str, resource_type:str,channel:str)-> bool:
+     async with AsyncSessionLocal() as session:
+          stmt = (
+               pg_insert(ReportDeliveryLog).values(
+                    patient_id = patient_id,
+                    openmrs_resource_id = resource_id,
+                    resource_type = resource_type,
+                    channel = channel,
+                    delivery_status = "pending",
+               )
+               .on_conflict_do_nothing(constraint="uq_report_patient_resource")
+               .returning(ReportDeliveryLog.id)
+
+          )
+          claimed = (await session.execute(stmt)).scalar_one_or_none()
+          await session.commit()
+          return claimed is not None
+     
+
+
+async def mark_delivery(
+      patient_id,
+      resource_id: str,
+      status: str,
+      summary: str | None = None,
+  ) -> None:
+  
+      values: dict = {"delivery_status": status}
+      if summary is not None:
+          values["ai_explanation_summary"] = summary
+      if status == "sent":
+          values["delivered_at"] = datetime.now(timezone.utc)
+
+      try:
+          async with AsyncSessionLocal() as session:
+              await session.execute(
+                  update(ReportDeliveryLog)
+                  .where(
+                      ReportDeliveryLog.patient_id == patient_id,
+                      ReportDeliveryLog.openmrs_resource_id == resource_id,
+                  )
+                  .values(**values)
+              )
+              await session.commit()
+      except Exception:
+          logger.exception(
+              
+              status, patient_id, resource_id,
+          )
+
+
+def _parse_omrs_dt(s:str | None) -> datetime | None:
+     if not s:
+          return None
+     try:
+          return datetime.fromisoformat(s.replace("Z", "+00:00"))
+     except ValueError:
+        return None
+     
+
+    
+def build_followups(
+          resource_type: str,
+          shaped: dict,
+          classification:str | None,
+          is_critical: bool,
+          channel: str,
+          now: datetime | None = None,
+) -> list[dict]:
+     
+     now = now or datetime.now(timezone.utc)
+     shaped = shaped or {}
+     rows : list[dict]=[]
+
+     if resource_type == "prescription":
+          expire = _parse_omrs_dt(shaped.get("auto_expire_date"))
+          if expire is None:
+               activated = _parse_omrs_dt(shaped.get("date_activated"))
+               duration = shaped.get("duration")
+               units = (shaped.get("duration_units") or "").lower()
+               if activated and isinstance(duration,(int,float)) and "day" in units:
+                    expire = activated + timedelta(days=duration)
+                
+          if expire is not None:
+                    trigger = expire - timedelta(days=REFILL_LEAD_DAYS)
+                    if trigger > now:
+                         rows.append({
+                              "event_type":"medication_refill",
+                              "trigger_at":trigger,
+                              "channel":channel
+                         })
+     else:
+                    if is_critical:
+                         rows.append({
+                              "event_type":"lab_followup_urgent",
+                              "trigger_at":now + timedelta(days=1),
+                              "channel":channel
+                         })
+
+                    elif classification == "abnormal":
+                         rows.append({
+                              "event_type":"lab_followup",
+                              "trigger_at":now + timedelta(days=3),
+                              "channel":channel
+                         })
+     return rows
+
