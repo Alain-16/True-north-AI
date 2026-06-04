@@ -6,6 +6,11 @@ from models.db import Patient
 from agent.subgraphs.reports import build_report_subgraph
 from features.reports.service import (claim_delivery,mark_delivery,upsert_medical_profile,plan_followups)
 from agent.mcp_client import mcp_client
+from core.config import get_settings
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy import func
+import asyncio
 # import httpx
 # from core.config import get_settings
 
@@ -19,7 +24,14 @@ report_graph = build_report_subgraph()
 TOPIC_RESOURCE_TYPE = {
       "/topic/CREATED:org.openmrs.Obs":       "lab",
       "/topic/CREATED:org.openmrs.DrugOrder": "prescription",
+      "/topic/CREATED:org.openmrs.Patient":   "patient",
   }
+ 
+EVENT_HANDLERS = {
+    "lab":          handle_report_event,      # noqa: F821  (defined above in handlers.py)
+    "prescription": handle_report_event,      # noqa: F821
+    "patient":      handle_patient_event,     # two topics legitimately share a handler
+}
 
 def normalize_phone(raw:str|None, default_cc: str)-> str |None:
     if not raw:
@@ -204,3 +216,57 @@ async def _resolve_patient(openmrs_patient_id: str):
   #     async with httpx.AsyncClient(timeout=15.0) as http:
   #         resp = await http.post(url, json=payload, headers=headers)
   #         resp.raise_for_status()
+
+
+async def handle_patient_event(event: dict)-> None:
+    
+        resource_uuid = event["resource_uuid"]
+        patient = (await mcp_client.call_tool(
+            "get_patient_by_uuid",{"patient_uuid": resource_uuid}
+        ))[0]
+
+        identifier = patient.get("identifier")
+
+        if not identifier:
+            logger.info("Patient event %s has no identifier; skipping", resource_uuid)
+            return
+        
+        settings = get_settings()
+        email = patient.get("email")
+        phone = normalize_phone(patient.get("phone"), settings.default_country_code)
+
+        async with AsyncSessionLocal() as session:
+            try:
+                await _upsert_patient(session,identifier,email,phone)
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                logger.exception("could not upsert patient openmrs_id= %s",identifier)
+                return
+        logger.info("Synced patient %s (openmrs_id=%s)",resource_uuid,identifier)
+
+    
+
+
+async def _upsert_patient(session,identifier:str,email:str | None, phone:str | None) -> None:
+
+    stmt = pg_insert(Patient).values(
+        openmrs_patient_id = identifier,
+        web_email = email,
+        whatsapp_phone = phone,
+        status = "pending_channel_link",
+    )
+
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["openmrs_patient_id"],
+        set_= {
+            "web_email": func.coalesce(stmt.excluded.web_email,Patient.web_email),
+            "whatsapp_phone": func.coalesce(
+                stmt.excluded.whatsapp_phone, Patient.whatsapp_phone
+            ),
+            "updated_at": func.now(),
+        },
+    )
+    await session.execute(stmt)
+
+

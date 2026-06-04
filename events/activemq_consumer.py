@@ -8,7 +8,7 @@ import stomp
 from core.config import get_settings
 from events.handlers import (
       TOPIC_RESOURCE_TYPE,
-      handle_report_event,
+      EVENT_HANDLERS,
       parse_event,
   )
 
@@ -19,10 +19,11 @@ RECONNECT_DELAY = 5  # seconds between reconnect attempts
 
 
 def _log_future_error(fut) -> None:
-      try:
-          fut.result()
-      except Exception:
-          logger.exception("handle_report_event failed")
+    try:
+        fut.result()
+    except Exception:
+        logger.exception("event handler failed")     # was "handle_report_event failed"
+
 
 
 def _host_port(url: str) -> tuple[str, int]:
@@ -49,6 +50,21 @@ class ReportEventListener(stomp.ConnectionListener):
       def on_disconnected(self) -> None:
           logger.warning("STOMP disconnected from ActiveMQ")
           self._consumer.handle_disconnect()
+
+
+
+      def on_message(self, frame) -> None:
+        event = parse_event(frame.headers.get("destination", ""), frame.body)
+        if event is None:
+            return
+
+        handler = EVENT_HANDLERS.get(event["resource_type"])     # noqa: F821
+        if handler is None:
+            return
+
+        fut = asyncio.run_coroutine_threadsafe(handler(event), self._loop)   # noqa: F821
+        fut.add_done_callback(_log_future_error)
+
 
 
 class ActiveMQConsumer:
@@ -112,6 +128,7 @@ class ActiveMQConsumer:
               except Exception:
                   logger.exception("Error disconnecting STOMP")
               self._conn = None
+
 
 consumer = ActiveMQConsumer()
 
