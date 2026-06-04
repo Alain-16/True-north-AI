@@ -7,6 +7,7 @@ from sqlalchemy import update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from models.db import ReportDeliveryLog
 from datetime import datetime,timedelta, timezone
+from models.db import ReminderSchedule
 
 
 logger = logging.getLogger(__name__)
@@ -295,3 +296,35 @@ def build_followups(
                          })
      return rows
 
+async def plan_followups(
+      patient_id,
+      resource_type: str,
+      shaped: dict,
+      classification: str | None,
+      is_critical: bool,
+      channel: str,
+  ) -> None:
+
+      rows = build_followups(resource_type, shaped or {}, classification, is_critical, channel)
+      if not rows:
+          return  # e.g. a normal lab — nothing to follow up
+
+      try:
+          async with AsyncSessionLocal() as session:
+              await session.execute(
+                  pg_insert(ReminderSchedule),
+                  [
+                      {
+                          "patient_id":     patient_id,
+                          "appointment_id": None,           # report-driven, not appointment-driven
+                          "event_type":     r["event_type"],
+                          "trigger_at":     r["trigger_at"],
+                          "channel":        r["channel"],
+                          "template_name":  None,           # web; WhatsApp templates deferred
+                      }
+                      for r in rows
+                  ],
+              )
+              await session.commit()
+      except Exception:
+          logger.exception("Failed to schedule follow-ups for patient_id=%s", patient_id)

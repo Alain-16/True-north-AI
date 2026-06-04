@@ -4,7 +4,7 @@ from sqlalchemy import select
 from core.database import AsyncSessionLocal
 from models.db import Patient
 from agent.subgraphs.reports import build_report_subgraph
-from features.reports.service import (claim_delivery,mark_delivery,upsert_medical_profile)
+from features.reports.service import (claim_delivery,mark_delivery,upsert_medical_profile,plan_followups)
 from agent.mcp_client import mcp_client
 
 logger = logging.getLogger(__name__)
@@ -103,7 +103,19 @@ async def handle_report_event(event: dict) -> None:
                                    source=f"{resource_type}:{resource_uuid}")
       response = state.get("response") or {}
       await mark_delivery(patient_id, resource_uuid, "sent", summary=response.get("content"))
+        
+
+      # Plan follow-ups from the result (refill nudge / lab follow-up). 
+      await plan_followups(
+          patient_id, resource_type,
+          state.get("shaped") or {},
+          state.get("classification"),
+          bool(state.get("is_critical")),
+          channel,
+      )
       logger.info("Delivered %s %s to patient %s", resource_type, resource_uuid, patient_id)
+      
+      
 
 
 async def _resolve_patient(openmrs_patient_id: str):
@@ -116,3 +128,5 @@ async def _resolve_patient(openmrs_patient_id: str):
           return None
       local_id, channel = row
       return local_id, (channel or "web")
+
+      
