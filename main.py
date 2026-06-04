@@ -13,12 +13,14 @@ from psycopg_pool import AsyncConnectionPool
 from features.chat.router import router
 from agent.mcp_client import mcp_client
 from events.activemq_consumer import consumer
+from scheduler.reminder_scanner import start_scheduler, stop_scheduler
+
+
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
-async def _start_scheduler():
-    pass
+
 
 
 @asynccontextmanager
@@ -37,14 +39,16 @@ async def lifespan(app:FastAPI):
             consumer.start(loop)
         except Exception:
             logger.exception("Could not start activemq consumer; events disabled")
-        scheduler_task = asyncio.create_task(_start_scheduler())
+        
+        try:
+            start_scheduler()
+        except Exception:
+            logger.exception("could not start reminder scheduler")
 
         yield
 
         consumer.stop()
-        scheduler_task.cancel()
-
-        await asyncio.gather(scheduler_task,return_exceptions=True)
+        stop_scheduler()
 
         await mcp_client.close()
 
