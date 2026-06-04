@@ -6,6 +6,10 @@ from models.db import Patient
 from agent.subgraphs.reports import build_report_subgraph
 from features.reports.service import (claim_delivery,mark_delivery,upsert_medical_profile,plan_followups)
 from agent.mcp_client import mcp_client
+# import httpx
+# from core.config import get_settings
+
+# WHATSAPP_API_VERSION = "v21.0"
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +107,13 @@ async def handle_report_event(event: dict) -> None:
                                    source=f"{resource_type}:{resource_uuid}")
       response = state.get("response") or {}
       await mark_delivery(patient_id, resource_uuid, "sent", summary=response.get("content"))
+
+      #    phone = await _patient_phone(patient_id)
+      #     if phone:
+      #         # We don't track last-inbound timestamps yet, so assume the 24h
+      #         # window is CLOSED for a proactive push → template. Flip to
+      #         # window_open=True once inbound timestamps are tracked.
+      #         await _deliver_whatsapp(phone, response.get("content", ""), window_open=False)
         
 
       # Plan follow-ups from the result (refill nudge / lab follow-up). 
@@ -129,4 +140,50 @@ async def _resolve_patient(openmrs_patient_id: str):
       local_id, channel = row
       return local_id, (channel or "web")
 
-      
+  # async def _patient_phone(patient_id) -> str | None:
+  #     async with AsyncSessionLocal() as session:
+  #         return (await session.execute(
+  #             select(Patient.whatsapp_phone).where(Patient.id == patient_id)
+  #         )).scalar_one_or_none()
+  #
+  # async def _deliver_whatsapp(to_phone: str, explanation: str, *, window_open: bool) -> None:
+  #     """Proactive WhatsApp delivery via Meta Cloud API.
+  #
+  #     WhatsApp's 24h customer-service window: free-form text is only allowed within
+  #     24h of the patient's last INBOUND message; outside it, a pre-approved template
+  #     is required. A proactive report push is normally outside the window.
+  #     """
+  #     settings = get_settings()
+  #     url = f"https://graph.facebook.com/{WHATSAPP_API_VERSION}/{settings.whatsapp_phone_number_id}/messages"
+  #     headers = {
+  #         "Authorization": f"Bearer {settings.meta_whatsapp_token}",
+  #         "Content-Type": "application/json",
+  #     }
+  #
+  #     if window_open:
+  #         # Inside the 24h window → free-form text is allowed.
+  #         payload = {
+  #             "messaging_product": "whatsapp",
+  #             "to": to_phone,
+  #             "type": "text",
+  #             "text": {"body": explanation[:4096]},        # WhatsApp text body limit
+  #         }
+  #     else:
+  #         # Outside the window → pre-approved template + deep link to /chat.
+  #         payload = {
+  #             "messaging_product": "whatsapp",
+  #             "to": to_phone,
+  #             "type": "template",
+  #             "template": {
+  #                 "name": "lab_result_available",          # one of the 4 approved templates
+  #                 "language": {"code": "en"},
+  #                 "components": [{
+  #                     "type": "body",
+  #                     "parameters": [{"type": "text", "text": "your results"}],
+  #                 }],
+  #             },
+  #         }
+  #
+  #     async with httpx.AsyncClient(timeout=15.0) as http:
+  #         resp = await http.post(url, json=payload, headers=headers)
+  #         resp.raise_for_status()
