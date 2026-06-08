@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     default_country_code: str = "250"
     debug:bool=False
 
+    resend_api_key: str
+    email_from: str = "elanetgroup@resend.dev"
+    jwt_secret_key : str
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 7
+
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()

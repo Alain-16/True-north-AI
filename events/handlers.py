@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy import func
 import asyncio
+from core.phone import normalize_phone
 # import httpx
 # from core.config import get_settings
 
@@ -32,24 +33,6 @@ EVENT_HANDLERS = {
     "prescription": handle_report_event,      # noqa: F821
     "patient":      handle_patient_event,     # two topics legitimately share a handler
 }
-
-def normalize_phone(raw:str|None, default_cc: str)-> str |None:
-    if not raw:
-        return None
-    
-    digits = "".join(ch for ch in raw if ch.isdigit())
-    if not digits:
-        return None
-    if digits.startswith("00"):
-        digits = digits[2:]
-    elif digits.startswith("0"):
-        digits = default_cc + digits[1:]
-    elif not digits.startswith(default_cc):
-        digits = default_cc + digits
-    
-    return digits or None
-
-
 def _flatten_map_message(payload: dict) -> dict:
 
       entries = (payload.get("map") or {}).get("entry") or []

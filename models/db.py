@@ -148,3 +148,21 @@ class MedicalProfile(Base):
     version = sa.Column(sa.Integer, nullable=False, server_default=sa.text("1"))
     created_at = sa.Column(sa.DateTime(timezone=True),nullable=False,server_default=sa.text("NOW()"))
     updated_at = sa.Column(sa.DateTime(timezone=True),nullable=False,server_default=sa.text("NOW()"))
+
+
+
+class RefreshToken(Base):                                   
+    __tablename__ = "refresh_tokens"
+
+    id          = sa.Column(sa.Uuid, primary_key=True, server_default=sa.text("gen_random_uuid()"))   
+    patient_id  = sa.Column(sa.Uuid, sa.ForeignKey("patients.id"), nullable=False)                    
+    expires_at  = sa.Column(sa.DateTime(timezone=True), nullable=False)                                
+    revoked     = sa.Column(sa.Boolean, nullable=False, server_default=sa.text("FALSE"))               
+
+    replaced_by_id = sa.Column(sa.Uuid, sa.ForeignKey("refresh_tokens.id"))                            
+    created_at  = sa.Column(sa.DateTime(timezone=True), nullable=False, server_default=sa.text("NOW()"))  
+    last_used_at = sa.Column(sa.DateTime(timezone=True))                                               
+
+    __table_args__ = (
+        sa.Index("idx_refresh_patient", "patient_id"),                                                
+    )
