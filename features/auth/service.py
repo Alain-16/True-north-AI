@@ -8,6 +8,7 @@ from models.db import OTPToken, Patient
 from core.phone import normalize_phone
 import logging
 from features.auth.email import send_otp_email
+from models.db import RefreshToken
 
 logger = logging.getLogger(__name__)
 
@@ -85,3 +86,12 @@ async def request_login_otp(session,phone:str,email:str)-> None:
 
     await send_otp_email(patient.web_email,code)
     await session.commit()
+
+
+async def revoke_all_for_patient(session,patient_id):
+    await session.execute(
+        update(RefreshToken)
+        .where(RefreshToken.patient_id == patient_id,
+               RefreshToken.revoked.is_(False))
+        .values(revoked=True)
+    )
