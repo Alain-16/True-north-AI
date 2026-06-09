@@ -17,6 +17,11 @@ class AgentState(BaseModel):
 
     pending_intent: Optional[dict] = None
 
+    # When set, the patient is asking a follow-up about a specific delivered
+    # report (report_delivery_log.id). Routes to the report_qa node, grounded in
+    # that report's stored explanation. Sent per-message by the web client.
+    report_id: Optional[str] = None
+
     error: Optional[str] = None
 
     retry_count: int = 0

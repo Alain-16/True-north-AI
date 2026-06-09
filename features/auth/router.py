@@ -109,11 +109,16 @@ async def refresh_endpoint(body: RefreshRequest,session:AsyncSession=Depends(get
     new_jti = uuid.uuid4()
     refresh_exp = now + timedelta(days=settings.refresh_token_expire_days)
 
+    # Insert the replacement token and flush it FIRST: replaced_by_id has no ORM
+    # relationship, so SQLAlchemy can't order the INSERT before the UPDATE on its
+    # own — without this, the UPDATE references a row that doesn't exist yet and
+    # the self-referential FK (refresh_tokens_replaced_by_id_fkey) is violated.
+    session.add(RefreshToken(id=new_jti,patient_id=patient.id,expires_at=refresh_exp))
+    await session.flush()
+
     row.revoked = True
     row.last_used_at = now
     row.replaced_by_id = new_jti
-
-    session.add(RefreshToken(id=new_jti,patient_id=patient.id,expires_at=refresh_exp))
 
     access = create_access_token(patient.id,patient.openmrs_patient_id)
     refresh = create_refresh_token(new_jti,patient.id)

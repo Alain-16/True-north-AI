@@ -10,6 +10,9 @@ router = APIRouter(prefix="/chat",tags=["chat"])
 
 class ChatRequest(BaseModel):
     message:str
+    # Optional: when the patient is asking a follow-up about a specific delivered
+    # report, the web client sends its report_delivery_log id. Routes to report_qa.
+    report_id: str | None = None
 
 async def _event_stream(graph,initial_state:dict, config:dict):
     try:
@@ -38,6 +41,9 @@ async def chat_stream(body: ChatRequest, req: Request,
           "patient_id":         patient_id,
           "openmrs_patient_id": patient["openmrs_patient_id"],
           "channel":            "web",
+          # Always set (None clears it) so prior report context doesn't persist
+          # in the checkpoint after the patient leaves the report Q&A.
+          "report_id":          body.report_id,
       }
 
       config = {"configurable": {"thread_id": thread_id}}

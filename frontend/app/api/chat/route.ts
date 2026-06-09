@@ -4,11 +4,11 @@ import { fastapiAuthed } from "@/lib/fastapi";
 // SSE response straight through to the browser. The browser never touches
 // FastAPI directly, and never holds the token.
 export async function POST(req: Request) {
-  const { message } = await req.json();
+  const { message, report_id } = await req.json();
 
   const upstream = await fastapiAuthed(req, "/chat/stream", {
     method: "POST",
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, report_id: report_id ?? null }),
   });
 
   if (!upstream.ok || !upstream.body) {

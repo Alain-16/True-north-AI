@@ -15,6 +15,7 @@ from agent.mcp_client import mcp_client
 from events.activemq_consumer import consumer
 from scheduler.reminder_scanner import start_scheduler, stop_scheduler
 from features.auth.router import router as auth_router
+from features.panels.router import router as panels_router
 
 
 settings = get_settings()
@@ -65,6 +66,7 @@ app = FastAPI(
 
 app.include_router(router)
 app.include_router(auth_router)
+app.include_router(panels_router)
 
 app.add_middleware(
     CORSMiddleware,
