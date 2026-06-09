@@ -2,3 +2,16 @@ venv/
 __pycache__/
 .env
 MediAgent-Technical-PRD.md
+
+reference.py
+
+scratch_a2.py
+scratch_b1.py
+scratch_b2.py
+scratch_r1.py
+scratch_r2.py
+scratch_sniff.py
+scratch_t1.py
+
+tests/
+simulations/

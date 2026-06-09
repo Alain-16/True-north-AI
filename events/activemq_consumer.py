@@ -37,13 +37,6 @@ class ReportEventListener(stomp.ConnectionListener):
           self._loop = loop
           self._consumer = consumer
 
-      def on_message(self, frame) -> None:
-          event = parse_event(frame.headers.get("destination", ""), frame.body)
-          if event is None:
-              return
-          fut = asyncio.run_coroutine_threadsafe(handle_report_event(event), self._loop)
-          fut.add_done_callback(_log_future_error)
-
       def on_error(self, frame) -> None:
           logger.error("STOMP error frame: %s", frame.body)
 

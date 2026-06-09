@@ -2,15 +2,15 @@ from mcp_server.app import mcp
 from mcp_server.openmrs_client import client
 
 
-_PHONE_ATTR_NAMES = {"Telephone Number","Phone number","Mobile","Contact Number"}
-_EMAIL_ATTR_NAMES = {"Email","Email Address","Email address"}
+_PHONE_ATTR_NAMES = {"Telephone Number","Phone number","Mobile","Contact Number","phoneNumber"}
+_EMAIL_ATTR_NAMES = {"Email","Email Address","Email address","email"}
 
 def _person_attr(person: dict, names: set[str]) -> str | None:
     for attr in person.get("attributes") or []:
         display = (attr.get("attributeType") or {}).get("display")
         if display in names:
             return attr.get("value") or None
-        return None
+    return None
 
 @mcp.tool()
 async def get_patient_by_identifier(identifier:str)-> dict:

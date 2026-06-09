@@ -28,11 +28,7 @@ TOPIC_RESOURCE_TYPE = {
       "/topic/CREATED:org.openmrs.Patient":   "patient",
   }
  
-EVENT_HANDLERS = {
-    "lab":          handle_report_event,      # noqa: F821  (defined above in handlers.py)
-    "prescription": handle_report_event,      # noqa: F821
-    "patient":      handle_patient_event,     # two topics legitimately share a handler
-}
+
 def _flatten_map_message(payload: dict) -> dict:
 
       entries = (payload.get("map") or {}).get("entry") or []
@@ -253,3 +249,8 @@ async def _upsert_patient(session,identifier:str,email:str | None, phone:str | N
     await session.execute(stmt)
 
 
+EVENT_HANDLERS = {
+    "lab":          handle_report_event,      # noqa: F821  (defined above in handlers.py)
+    "prescription": handle_report_event,      # noqa: F821
+    "patient":      handle_patient_event,     # two topics legitimately share a handler
+}

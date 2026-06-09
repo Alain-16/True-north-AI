@@ -5,16 +5,18 @@ from fastapi import FastAPI
 from httpx import AsyncClient, ASGITransport
 
 from features.chat.router import router
+from core.security import create_access_token
 
   # Minimal app — only the chat router, no lifespan, no DB connections
 test_app = FastAPI()
 test_app.include_router(router)
 
-PAYLOAD = {
-      "message": "Book me a doctor",
-      "patient_id": "patient-abc",
-      "openmrs_patient_id": "OP-123",
-  }
+  # Identity now comes from a verified access token, not the request body.
+PATIENT_ID = "patient-abc"
+OPENMRS_ID = "OP-123"
+AUTH = {"Authorization": f"Bearer {create_access_token(PATIENT_ID, OPENMRS_ID)}"}
+
+PAYLOAD = {"message": "Book me a doctor"}
 
 
   # ---------------------------------------------------------------------------
@@ -55,33 +57,32 @@ async def client():
 class TestChatStreamEndpoint:
 
       async def test_content_type_is_event_stream(self, client):
-          response = await client.post("/chat/stream", json=PAYLOAD)
+          response = await client.post("/chat/stream", json=PAYLOAD, headers=AUTH)
           assert response.headers["content-type"].startswith("text/event-stream")
 
       async def test_response_ends_with_done(self, client):
-          response = await client.post("/chat/stream", json=PAYLOAD)
+          response = await client.post("/chat/stream", json=PAYLOAD, headers=AUTH)
           data_lines = get_data_lines(response)
           assert data_lines, "No data lines found in SSE response"
           assert data_lines[-1] == "data: [DONE]"
 
       async def test_token_payload_is_valid_json(self, client):
-          response = await client.post("/chat/stream", json=PAYLOAD)
+          response = await client.post("/chat/stream", json=PAYLOAD, headers=AUTH)
           data_lines = get_data_lines(response)
-          # First data line is the token; last is [DONE]
           token_line = data_lines[0]
           payload = json.loads(token_line.removeprefix("data: "))
           assert "token" in payload
 
       async def test_token_contains_formatted_response(self, client):
-          response = await client.post("/chat/stream", json=PAYLOAD)
+          response = await client.post("/chat/stream", json=PAYLOAD, headers=AUTH)
           data_lines = get_data_lines(response)
           token_line = data_lines[0]
           payload = json.loads(token_line.removeprefix("data: "))
           inner = json.loads(payload["token"])
           assert inner["content"] == "Here to help."
 
-      async def test_thread_id_derived_from_patient_id(self):
-          # Track what config astream was called with
+      async def test_thread_id_derived_from_token(self):
+          # thread_id must come from the TOKEN's patient id, not the body.
           captured = {}
 
           async def tracking_stream(*args, **kwargs):
@@ -95,10 +96,9 @@ class TestChatStreamEndpoint:
           async with AsyncClient(
               transport=ASGITransport(app=test_app), base_url="http://test"
           ) as c:
-              await c.post("/chat/stream", json=PAYLOAD)
+              await c.post("/chat/stream", json=PAYLOAD, headers=AUTH)
 
-          expected_thread_id = f"{PAYLOAD['patient_id']}:web"
-          assert captured["config"]["configurable"]["thread_id"] == expected_thread_id
+          assert captured["config"]["configurable"]["thread_id"] == f"{PATIENT_ID}:web"
 
       async def test_graph_error_produces_error_event(self):
           async def error_stream(*args, **kwargs):
@@ -112,16 +112,25 @@ class TestChatStreamEndpoint:
           async with AsyncClient(
               transport=ASGITransport(app=test_app), base_url="http://test"
           ) as c:
-              response = await c.post("/chat/stream", json=PAYLOAD)
+              response = await c.post("/chat/stream", json=PAYLOAD, headers=AUTH)
 
           data_lines = get_data_lines(response)
-          # Error event must appear
           error_lines = [l for l in data_lines if "error" in l]
           assert error_lines, "No error event found in SSE response"
-          # [DONE] must still appear — finally block must have run
           assert data_lines[-1] == "data: [DONE]"
 
-      async def test_missing_required_field_returns_422(self, client):
-          # Pydantic validation — patient_id is required
-          response = await client.post("/chat/stream", json={"message": "hello"})
+      async def test_missing_message_returns_422(self, client):
+          # message is required; auth present so we reach validation.
+          response = await client.post("/chat/stream", json={}, headers=AUTH)
           assert response.status_code == 422
+
+      async def test_missing_auth_returns_401(self, client):
+          # No bearer token → rejected before reaching the graph.
+          response = await client.post("/chat/stream", json=PAYLOAD)
+          assert response.status_code == 401
+
+      async def test_bad_token_returns_401(self, client):
+          response = await client.post(
+              "/chat/stream", json=PAYLOAD, headers={"Authorization": "Bearer not.a.jwt"}
+          )
+          assert response.status_code == 401

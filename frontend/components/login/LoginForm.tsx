@@ -19,6 +19,8 @@ import {
   InputOTPGroup,
   InputOTPSlot,
 } from "@/components/ui/input-otp";
+import { signIn } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
 type Step = "request" | "verify";
 
@@ -82,6 +84,7 @@ export function LoginForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
+  const router = useRouter();
 
   // Resend countdown tick.
   useEffect(() => {
@@ -91,9 +94,12 @@ export function LoginForm() {
   }, [resendIn]);
 
   async function requestCode() {
-    // TODO (Block 2C): POST /api/auth/request-otp via the BFF with { phone, email }.
-    // Always resolves (anti-enumeration) — backend returns a generic response.
-    await new Promise((r) => setTimeout(r, 600));
+    // BFF → FastAPI /auth/request-otp. Generic response (anti-enumeration).
+    await fetch("/api/auth/request-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, email }),
+    });
   }
 
   async function handleRequest(e: React.FormEvent) {
@@ -136,11 +142,15 @@ export function LoginForm() {
     }
     setSubmitting(true);
     try {
-      // TODO (Block 2C/2D): signIn("credentials", { phone, code }) -> NextAuth ->
-      // FastAPI /auth/verify-otp -> store tokens server-side -> router.push("/chat").
-      await new Promise((r) => setTimeout(r, 600));
+      // signIn → Auth.js Credentials authorize() → FastAPI /auth/verify-otp.
+      const res = await signIn("credentials", { phone, code, redirect: false });
+      if (res?.error) {
+        setError("That code is invalid or has expired.");
+      } else {
+        router.push("/chat");
+      }
     } catch {
-      setError("That code is invalid or has expired.");
+      setError("Something went wrong. Please try again.");
     } finally {
       setSubmitting(false);
     }

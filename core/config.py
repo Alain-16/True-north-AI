@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     debug:bool=False
 
     resend_api_key: str
-    email_from: str = "elanetgroup@resend.dev"
+    email_from: str = "TrueNorth-AI <onboarding@resend.dev>"
     jwt_secret_key : str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15

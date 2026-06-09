@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { Providers } from "./providers";
 
 // Plus Jakarta Sans drives `--font-sans` (globals.css maps it to the font-sans utility).
 // Geist Mono stays for tabular numerics (lab values, queue position, times).
@@ -31,7 +32,9 @@ export default function RootLayout({
       lang="en"
       className={`${plusJakarta.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full">{children}</body>
+      <body className="min-h-full">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

@@ -1,16 +1,15 @@
 import json
-from fastapi import APIRouter,Request
+from fastapi import APIRouter,Request,Depends
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 from agent.state import AgentState
+from features.auth.deps import get_current_patient
 
 router = APIRouter(prefix="/chat",tags=["chat"])
 
 class ChatRequest(BaseModel):
     message:str
-    patient_id:str
-    openmrs_patient_id:str
 
 async def _event_stream(graph,initial_state:dict, config:dict):
     try:
@@ -26,16 +25,18 @@ async def _event_stream(graph,initial_state:dict, config:dict):
 
 
 @router.post("/stream")
-async def chat_stream(body: ChatRequest, req: Request) -> StreamingResponse:
+async def chat_stream(body: ChatRequest, req: Request,
+                      patient: dict = Depends(get_current_patient)) -> StreamingResponse:
       graph = req.app.state.graph
 
-      # One stable thread per patient per channel — derived, never client-supplied
-      thread_id = f"{body.patient_id}:web"
+      # Identity comes from the verified access token, never the request body.
+      patient_id = patient["patient_id"]
+      thread_id = f"{patient_id}:web"
 
       initial_state = {
           "messages":           [HumanMessage(content=body.message)],
-          "patient_id":         body.patient_id,
-          "openmrs_patient_id": body.openmrs_patient_id,
+          "patient_id":         patient_id,
+          "openmrs_patient_id": patient["openmrs_patient_id"],
           "channel":            "web",
       }
 
