@@ -225,7 +225,7 @@ export function LoginForm() {
                 Care provider
               </span>
               <span className="block text-[14px] font-semibold text-ink-800 truncate">
-                St. Mary&apos;s Hospital · Lagos
+                St. Mary&apos;s Hospital · Kigali
               </span>
             </span>
           </div>

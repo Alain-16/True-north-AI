@@ -73,16 +73,17 @@ export function Hero() {
         <div className="mt-auto mb-10">
           <figure className="rounded-2xl bg-white/8 backdrop-blur ring-1 ring-white/15 p-5 max-w-md">
             <blockquote className="text-[15px] leading-relaxed text-teal-50">
-              &ldquo;I scheduled my mother&apos;s follow-up at 11 PM, in Yoruba,
-              without calling anyone. It just worked.&rdquo;
+              &ldquo;Scheduling my loved ones follow up appointment&apos;s made
+              easy by using TrueNorth-AI, It works in a matter of
+              seconds.&rdquo;
             </blockquote>
             <figcaption className="mt-3 flex items-center gap-2.5">
               <span className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-300 to-teal-500 text-teal-900 flex items-center justify-center text-[12px] font-bold">
-                FA
+                KD
               </span>
               <span className="leading-tight">
                 <span className="block text-[13px] font-semibold text-white">
-                  Funke A.
+                  Kalima Denis.
                 </span>
                 <span className="block text-[11.5px] text-teal-100/75">
                   Patient · using TrueNorth-AI for 7 months
