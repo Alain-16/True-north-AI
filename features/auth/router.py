@@ -16,7 +16,7 @@ from features.auth.service import verify_otp
 from features.auth.schemas import TokenPair
 from core.security import decode_token
 from features.auth.service import revoke_all_for_patient
-from features.auth.schemas import RefreshRequest
+from features.auth.schemas import RefreshRequest,VerifyOTP
 import jwt
 
 
@@ -39,7 +39,7 @@ async def request_otp(body:RequestOTP,session:AsyncSession=Depends(get_db)):
     return _GENERIC_OTP_RESPONSE
 
 @router.post("/verify-otp",response_model=TokenPair)
-async def verify_otp_endpoint(body:verify_otp,session:AsyncSession=Depends(get_db)):
+async def verify_otp_endpoint(body:VerifyOTP,session:AsyncSession=Depends(get_db)):
 
     settings = get_settings()
 
