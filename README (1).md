@@ -1,8 +1,3 @@
-<p align="center">
-  <!-- TODO: Replace with actual logo -->
-  <img src="/home/alain/Alain/TrueNorth-AI/frontend/app/shield.png" alt="TrueNorth-AI Logo" width="100" />
-</p>
-
 <h1 align="center">TrueNorth-AI</h1>
 
 <p align="center">
@@ -25,13 +20,12 @@
 <br />
 
 <!-- TODO: Add hero screenshot or demo GIF -->
- <p align="center">
-  <img src="/home/alain/Alain/TrueNorth-AI/frontend/public/loginscreen.png" alt="TrueNorth-AI Demo" width="800" />
-</p> 
+
+![Login Screen](frontend/public/loginscreen.png)
+
 <br>
- <p align="center">
-  <img src="/home/alain/Alain/TrueNorth-AI/frontend/public/mainChat.png" alt="TrueNorth-AI Demo" width="800" />
-</p>
+
+![Main Chat](frontend/public/mainChat.png)
 
 ---
 
