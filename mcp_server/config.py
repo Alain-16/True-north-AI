@@ -14,6 +14,9 @@ class MCPSettings(BaseSettings):
     openmrs_username: str
     openmrs_password: str
 
+    mcp_host: str = "0.0.0.0"
+    mcp_port: int = "8001"
+
 @lru_cache()
 def get_mcp_settings()-> MCPSettings:
     return MCPSettings()

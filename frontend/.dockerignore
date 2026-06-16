@@ -1,0 +1,10 @@
+# reinstall
+node_modules/
+
+.env
+.env.*
+
+.git/
+.gitignore
+npm-debug.log*
+*.md

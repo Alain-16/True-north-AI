@@ -1,0 +1,135 @@
+x-backend-image: &backend-image
+  image: truenorth-backend:latest
+  build:
+    context: .
+    dockerfile: Dockerfile
+
+services:
+  backend:
+    <<: *backend-image
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env.production
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - MCP_SERVER_URL=http://mcp_server:8001/sse
+      - ACTIVEMQ_URL=tcp://activemq:61613
+      - DEBUG=false
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mcp_server:
+        condition: service_healthy
+      activemq:
+        condition: service_healthy
+    networks:
+      - app_net
+      - bahmni
+
+  mcp_server:
+    <<: *backend-image
+    command: ["python", "-m", "mcp_server.server"]
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env.production
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket,sys; s=socket.socket(); s.settimeout(3); sys.exit(0 if s.connect_ex(('localhost',8001))==0 else 1)",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_interval: 15s
+      retries: 3
+    networks:
+      - app_net
+      - bahmni
+
+  frontend:
+    image: truenorth-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env.production
+    environment:
+      - FASTAPI_INTERNAL_URL=http://backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - app_net
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mediagent -d mediagent"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app_net
+
+  activemq:
+    image: apache/activemq-classic:5.18.3
+    restart: unless-stopped
+    volumes:
+      - activemq_data:/var/activemq/data
+    # No published ports in prod (dev exposed 61616/61613/8161 for tooling).
+    networks:
+      - app_net
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    # Internal only — scraped by Grafana, not exposed to the host.
+    networks:
+      - app_net
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    restart: unless-stopped
+    ports:
+      - "3001:3000" # ops dashboards
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - app_net
+
+volumes:
+  postgres_data:
+  activemq_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  app_net:
+    driver: bridge
+  bahmni:
+    external: true
+    name: bahmni-standard_default
