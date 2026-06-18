@@ -104,6 +104,7 @@ async def resolve_service(state: AgentState) -> dict:
       specialty = state.flow_state.get("specialty")
       if not specialty:
             return {
+                 "flow_state":{**state.flow_state,"step":"awaiting_speciality"},
                   "response":{
                         "type":"text",
                         "content":"which speciality or service are you looking for ? (e.g General medicine)",
