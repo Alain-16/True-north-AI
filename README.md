@@ -5,8 +5,6 @@
   Book doctors, understand lab results, track your queue — all through WhatsApp or web chat.
 </p>
 
-<br>
-
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.11+-blue?logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/next.js-14+-black?logo=next.js" />
@@ -14,6 +12,10 @@
   <img src="https://img.shields.io/badge/Claude-Sonnet%20%7C%20Opus-orange?logo=anthropic" />
   <img src="https://img.shields.io/badge/OpenMRS-integrated-red" />
 </p>
+<p>To access the application click on the link below</p>
+<a href="http://3.92.134.232:3000/login">TrueNorth-AI</a>
+
+<br>
 
 <!-- TODO: Add hero screenshot or demo GIF -->
 
