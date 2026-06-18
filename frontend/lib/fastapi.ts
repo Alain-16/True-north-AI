@@ -18,7 +18,9 @@ export function fastapi(path: string, init?: RequestInit): Promise<Response> {
 
 // Decode a JWT payload without verifying (we just received it over a trusted
 // server-side call). Node runtime → Buffer is available.
-export function decodeJwtPayload<T = Record<string, unknown>>(token: string): T {
+export function decodeJwtPayload<T = Record<string, unknown>>(
+  token: string,
+): T {
   const payload = token.split(".")[1];
   return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as T;
 }
@@ -31,7 +33,7 @@ export async function fastapiAuthed(
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
-  const secure = process.env.NODE_ENV === "production";
+  const secure = (process.env.AUTH_URL ?? "").startsWith("https://");
   const cookieName = secure
     ? "__Secure-authjs.session-token"
     : "authjs.session-token";
@@ -42,6 +44,14 @@ export async function fastapiAuthed(
     salt: cookieName,
     secureCookie: secure,
     cookieName,
+  });
+  console.log("[fastapiAuthed]", {
+    cookieName,
+    secure,
+    hasToken: !!token,
+    hasAccessToken: Boolean(
+      (token as { accessToken?: string } | null)?.accessToken,
+    ),
   });
 
   const accessToken = (token as { accessToken?: string } | null)?.accessToken;

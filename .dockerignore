@@ -1,0 +1,28 @@
+# python runtime
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# secrets
+.env
+*.env
+.env.*
+
+#frontend builds separately
+frontend/
+
+# tests
+tests/
+simulations/
+.pytest_cache/
+.qodo/
+scratch_*.py
+reference.py
+
+.git/
+.gitignore
+*.md
+
+dev-compose.yml
